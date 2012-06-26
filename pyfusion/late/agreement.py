@@ -24,7 +24,54 @@ Agreement between information retrieval (IR) systems
 
 import numpy as np
 import scipy.stats
-import util
+
+def rank(a, higher_first=True):
+    """
+    Rank relevance scores
+    
+    Parameters
+    ----------
+    a : array-like (num_samples, num_systems)
+        Relevance scores for each sample and system
+    higher_first : bool, optional
+        True means higher is better (and therefore lower rank)
+        False means the opposite. Defaults to True.
+        
+    Returns
+    -------
+    r : array (num_samples, num_systems)
+        Samples rank for each system
+    
+    """
+    N, D = a.shape
+    r = np.empty((N, D), dtype=np.int64)
+    for d in range(D):
+        if higher_first:
+            r[:, d] = scipy.stats.rankdata(-a[:, d])
+        else:
+            r[:, d] = scipy.stats.rankdata(a[:, d])
+    return r
+
+
+def top_ranked(r, pool_depth=100):
+    """
+    Pool top ranked samples
+    
+    Parameters
+    ----------
+    r : array-like (num_samples, num_systems)
+        Relevance scores ranks
+    pool_depth : int, optional
+        Pool depth. Defaults to 100.
+        
+    Returns
+    -------
+    in_pool : array (num_samples, )
+        True if at least one system ranks the sample in its top `pool_depth`
+        False otherwise.
+    """
+    return np.any(r <= pool_depth, axis=1)
+
 
 def kendall_tau(X, pool_depth=0, higher_first=True):
     """
@@ -48,11 +95,11 @@ def kendall_tau(X, pool_depth=0, higher_first=True):
     """
     
     # rank samples (more relevant to less relevant)
-    R = util.rank(X, higher_first=higher_first)
+    R = rank(X, higher_first=higher_first)
     
     # keep top ranked samples only
     if pool_depth > 0:
-        R = R[util.top_ranked(R, pool_depth=pool_depth), :]
+        R = R[top_ranked(R, pool_depth=pool_depth), :]
     
     # pool size & number of systems
     N, D = R.shape
@@ -120,11 +167,11 @@ def average_precision_correlation(X, pool_depth=0, higher_first=True):
     """
     
     # rank samples (more relevant to less relevant)
-    R = util.rank(X, higher_first=higher_first)
+    R = rank(X, higher_first=higher_first)
     
     # keep top ranked samples only
     if pool_depth > 0:
-        R = R[util.top_ranked(R, pool_depth=pool_depth), :]
+        R = R[top_ranked(R, pool_depth=pool_depth), :]
     
     # pool size & number of systems
     N, D = R.shape
