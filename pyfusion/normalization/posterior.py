@@ -24,7 +24,49 @@ Posterior probability estimation
 
 import numpy as np
 import scipy.stats
+import multiprocessing
 from sklearn.base import BaseEstimator, TransformerMixin
+
+def _log_likelihood_ratio((llh_ratio, x, d)):
+    """
+    Helper function for multi-threaded computation of log-likelihood ratio
+    
+    Function
+    
+    Parameters
+    ----------
+    llh_ratio : LogLikelihoodRatio
+    x : array (num_samples, )
+    d : int
+    
+    Returns
+    -------
+    x : 
+    
+    """
+    
+    # score support
+    m, M = llh_ratio.support_[d]
+        
+    # 'supported' samples
+    supported = np.where((x>m)*(x<M))
+    # 'outliers' samples
+    if llh_ratio.direction_[d]:
+        good = np.where(x >= M)
+        bad  = np.where(x <= m)
+    else:
+        good = np.where(x <= m)
+        bad  = np.where(x >= M)
+        
+    x[good] = -np.inf
+    x[bad] = np.inf
+    
+    neg_kde, pos_kde = llh_ratio.kde_[d]
+    pos_llh = pos_kde(x[supported])
+    neg_llh = neg_kde(x[supported])
+    x[supported] = np.log(neg_llh)-np.log(pos_llh)
+    
+    return x
 
 class LogLikelihoodRatio(BaseEstimator, TransformerMixin):
     """
@@ -104,29 +146,6 @@ class LogLikelihoodRatio(BaseEstimator, TransformerMixin):
         
         return self
     
-    def _transform(self, x, d):
-        
-        # score support
-        m, M = self.support_[d]
-        
-        # 'supported' samples
-        supported = np.where((x>m)*(x<M))
-        # 'outliers' samples
-        if self.direction_[d]:
-            good = np.where(x >= M)
-            bad  = np.where(x <= m)
-        else:
-            good = np.where(x <= m)
-            bad  = np.where(x >= M)
-        
-        x[good] = -np.inf
-        x[bad] = np.inf
-        neg_kde, pos_kde = self.kde_[d]
-        pos_llh = pos_kde(x[supported])
-        neg_llh = neg_kde(x[supported])
-        x[supported] = np.log(neg_llh)-np.log(pos_llh)
-        return x
-    
     def transform(self, X):
         
         X = np.atleast_2d(X)
@@ -137,10 +156,58 @@ class LogLikelihoodRatio(BaseEstimator, TransformerMixin):
         if self.copy:
             X = X.copy()
         
-        for d in range(D):
-            X[:, d] = self._transform(X[:, d], d)
+        pool = multiprocessing.Pool(processes=None)
+        tX = pool.map(_log_likelihood_ratio, [(self, X[:, d], d) 
+                                              for d in range(D)])
+        for d, tx in enumerate(tX):
+            X[:, d] = tx
         
         return X
+
+
+
+def _posterior((posterior, x, d)):
+    """
+    Helper function for multi-threaded computation of posterior probabilities
+    
+    Function
+    
+    Parameters
+    ----------
+    posterior : Posterior
+    x : array (num_samples, )
+    d : int
+    
+    Returns
+    -------
+    x : 
+    
+    """
+    
+    # score support
+    m, M = posterior.support_[d]
+    
+    # 'supported' samples
+    supported = np.where((x > m)*(x<M))
+    # special behavior for outliers
+    if posterior.direction_[d]:
+        good = np.where(x >= M)
+        bad  = np.where(x <= m)
+    else:
+        good = np.where(x <= m)
+        bad  = np.where(x >= M)
+    
+    x[good] = 1.
+    x[bad] = 0.
+    
+    neg_kde, pos_kde = posterior.kde_[d]
+    pos_llh = pos_kde(x[supported])
+    neg_llh = neg_kde(x[supported])
+    neg_prior, pos_prior = posterior.prior_
+    x[supported] = 1./(1+neg_llh/pos_llh*neg_prior/pos_prior)
+    
+    return x
+
 
 class Posterior(BaseEstimator, TransformerMixin):
     """
@@ -220,33 +287,21 @@ class Posterior(BaseEstimator, TransformerMixin):
         
         return self
     
-    def _transform(self, x, d):
-        
-        # score support
-        m, M = self.support_[d]
-        
-        # 'supported' samples
-        supported = np.where((x > m)*(x<M))
-        # special behavior for outliers
-        if self.direction_[d]:
-            good = np.where(x >= M)
-            bad  = np.where(x <= m)
-        else:
-            good = np.where(x <= m)
-            bad  = np.where(x >= M)
-        
-        x[good] = 1.
-        x[bad] = 0.
-        
-        neg_kde, pos_kde = self.kde_[d]
-        pos_llh = pos_kde(x[supported])
-        neg_llh = neg_kde(x[supported])
-        neg_prior, pos_prior = self.prior_
-        x[supported] = 1./(1+neg_llh/pos_llh*neg_prior/pos_prior)
-        
-        return x
-    
     def transform(self, X):
+        """
+        Compute posterior probabilities
+        
+        Parameters
+        ----------
+        X : array-like (num_samples, num_systems)
+            Sample relevance scores for each system
+        
+        Returns
+        -------
+        posterior : array (num_samples, num_systems)
+            Posterior probabilities for each system
+        
+        """
         
         X = np.atleast_2d(X)
         nX, D = X.shape
@@ -256,8 +311,10 @@ class Posterior(BaseEstimator, TransformerMixin):
         if self.copy:
             X = X.copy()
         
-        for d in range(D):
-            X[:, d] = self._transform(X[:, d], d)
+        pool = multiprocessing.Pool(processes=None)
+        tX = pool.map(_posterior, [(self, X[:, d], d) for d in range(D)])
+        for d, tx in enumerate(tX):
+            X[:, d] = tx
         
         return X
 
