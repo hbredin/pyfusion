@@ -45,26 +45,29 @@ def _log_likelihood_ratio((llh_ratio, x, d)):
     
     """
     
-    # score support
-    m, M = llh_ratio.support_[d]
-        
-    # 'supported' samples
-    supported = np.where((x>m)*(x<M))
-    # 'outliers' samples
-    if llh_ratio.direction_[d]:
-        good = np.where(x >= M)
-        bad  = np.where(x <= m)
-    else:
-        good = np.where(x <= m)
-        bad  = np.where(x >= M)
-        
-    x[good] = -np.inf
-    x[bad] = np.inf
-    
+    # compute positive & negative likelihoods
     neg_kde, pos_kde = llh_ratio.kde_[d]
-    pos_llh = pos_kde(x[supported])
-    neg_llh = neg_kde(x[supported])
-    x[supported] = np.log(neg_llh)-np.log(pos_llh)
+    pos_llh = pos_kde(x)
+    neg_llh = neg_kde(x)
+    
+    # samples where both likelihoods are strictly positive
+    known = np.where((pos_llh > 0) * (neg_llh > 0))
+    x[known] = np.log(neg_llh[known]) - np.log(pos_llh[known])
+    
+    # samples where both likelihoods are null
+    # likelihood ratio == 1 ==> 
+    unknown = np.where((neg_llh == 0) * (pos_llh == 0))
+    x[unknown] = 0.
+    
+    # samples where positive likelihood is strictly positive
+    # and negative likelihood is null ==> infinity likelihood ratio
+    good = np.where((neg_llh == 0) * (pos_llh > 0))
+    x[good] = -np.inf
+    
+    # samples where negative likelihood is strictly positive
+    # and positive likelihood is null ==> null likelihood ratio
+    bad = np.where((neg_llh > 0) * (pos_llh == 0))
+    x[bad] = np.inf
     
     return x
 
@@ -164,8 +167,6 @@ class LogLikelihoodRatio(BaseEstimator, TransformerMixin):
         
         return X
 
-
-
 def _posterior((posterior, x, d)):
     """
     Helper function for multi-threaded computation of posterior probabilities
@@ -184,30 +185,32 @@ def _posterior((posterior, x, d)):
     
     """
     
-    # score support
-    m, M = posterior.support_[d]
+    # compute positive & negative likelihoods
+    neg_kde, pos_kde = posterior.kde_[d]
+    pos_llh = pos_kde(x)
+    neg_llh = neg_kde(x)
     
-    # 'supported' samples
-    supported = np.where((x > m)*(x<M))
-    # special behavior for outliers
-    if posterior.direction_[d]:
-        good = np.where(x >= M)
-        bad  = np.where(x <= m)
-    else:
-        good = np.where(x <= m)
-        bad  = np.where(x >= M)
+    # samples where both likelihoods are strictly positive
+    known = np.where((pos_llh > 0) * (neg_llh > 0))
+    neg_prior, pos_prior = posterior.prior_
+    x[known] = 1./(1 + neg_llh[known]/pos_llh[known]*neg_prior/pos_prior)
     
+    # samples where both likelihoods are null
+    # likelihood ratio == 1 ==> 
+    unknown = np.where((neg_llh == 0) * (pos_llh == 0))
+    x[unknown] = pos_prior
+    
+    # samples where positive likelihood is strictly positive
+    # and negative likelihood is null ==> infinity likelihood ratio
+    good = np.where((neg_llh == 0) * (pos_llh > 0))
     x[good] = 1.
+    
+    # samples where negative likelihood is strictly positive
+    # and positive likelihood is null ==> null likelihood ratio
+    bad = np.where((neg_llh > 0) * (pos_llh == 0))
     x[bad] = 0.
     
-    neg_kde, pos_kde = posterior.kde_[d]
-    pos_llh = pos_kde(x[supported])
-    neg_llh = neg_kde(x[supported])
-    neg_prior, pos_prior = posterior.prior_
-    x[supported] = 1./(1+neg_llh/pos_llh*neg_prior/pos_prior)
-    
     return x
-
 
 class Posterior(BaseEstimator, TransformerMixin):
     """
