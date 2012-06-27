@@ -73,9 +73,9 @@ def top_ranked(r, pool_depth=100):
     return np.any(r <= pool_depth, axis=1)
 
 
-def kendall_tau(X, pool_depth=0, higher_first=True):
+def kendall_rank_correlation(X, pool_depth=0, higher_first=True):
     """
-    Kendall's tau
+    Kendall's Rank Correlation coefficient
     
     Parameters
     ----------
@@ -90,7 +90,7 @@ def kendall_tau(X, pool_depth=0, higher_first=True):
     Returns
     -------
     A : array (num_systems, num_systems)
-        Kendall's tau for each pair of systems
+        Kendall's Rank Correlation coefficient for each pair of systems
     
     """
     
@@ -193,6 +193,87 @@ def average_precision_correlation(X, pool_depth=0, higher_first=True):
     
     # shift to [-1, 1] range
     return 2./(N-1)*A-1
+
+def spearman_rank_correlation(X, pool_depth=0, higher_first=True):
+    """
+    Spearman's Rank Correlation coefficient
+    
+    Parameters
+    ----------
+    X : array-like (num_samples, num_systems)
+        Sample relevance scores for each system
+    higher_first : bool, optional
+        True means higher score is more relevant.
+        False means the opposite. Defaults to True.
+    pool_depth : int, optional
+        Fasten computation by focusing on top ranked samples
+    
+    Returns
+    -------
+    A : array (num_systems, num_systems)
+        Spearman's rank correlation coefficient for each pair of systems
+    
+    """
+    
+    # keep top ranked samples only
+    if pool_depth > 0:
+        # rank samples (more relevant to less relevant)
+        R = rank(X, higher_first=higher_first)
+        X = X[top_ranked(R, pool_depth=pool_depth), :]
+    
+    # why reinvent the wheel? :)
+    A, _ = scipy.stats.spearmanr(X, axis=0)
+    
+    # pool size & number of systems
+    N, D = X.shape
+    
+    # when D == 2, spearmanr returns a scalar
+    if D == 2:
+        A = np.array([[1., A],[A, 1.]])
+    
+    return A
+
+def pearson_correlation(X, pool_depth=0, higher_first=True):
+    """
+    Pearson Product-Moment Correlation coefficient
+    
+    Parameters
+    ----------
+    X : array-like (num_samples, num_systems)
+        Sample relevance scores for each system
+    higher_first : bool, optional
+        True means higher score is more relevant.
+        False means the opposite. Defaults to True.
+    pool_depth : int, optional
+        Fasten computation by focusing on top ranked samples
+    
+    Returns
+    -------
+    A : array (num_systems, num_systems)
+        Pearson product-moment correlation coefficient for each pair of systems
+    
+    """
+    
+    # keep top ranked samples only
+    if pool_depth > 0:
+        # rank samples (more relevant to less relevant)
+        R = rank(X, higher_first=higher_first)
+        X = X[top_ranked(R, pool_depth=pool_depth), :]
+    
+    # pool size & number of systems
+    N, D = X.shape
+    
+    # one pair at a time
+    A = np.zeros((D, D), dtype=np.float32)
+    for i in range(D):
+        A[i, i] = 1.
+        for j in range(i+1, D):
+            A[i, j], _ = scipy.stats.pearsonr(X[:,i], X[:,j])
+            # coefficient is symmetric
+            A[j, i] = A[i, j]
+            
+    return A
+
 
 if __name__ == "__main__":
     import doctest
