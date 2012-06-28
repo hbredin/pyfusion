@@ -177,7 +177,7 @@ def average_precision_correlation(X, pool_depth=0, higher_first=True):
     N, D = R.shape
     
     # initialize returned matrix
-    A = np.zeros((D, D))
+    A = np.zeros((D, D), dtype=np.float64)
     
     # loop on each system
     for d in range(D):
@@ -264,7 +264,7 @@ def pearson_correlation(X, pool_depth=0, higher_first=True):
     N, D = X.shape
     
     # one pair at a time
-    A = np.zeros((D, D), dtype=np.float32)
+    A = np.zeros((D, D), dtype=np.float64)
     for i in range(D):
         A[i, i] = 1.
         for j in range(i+1, D):
