@@ -87,11 +87,12 @@ class LogLikelihoodRatio(BaseEstimator, TransformerMixin):
         If False, .transform() is applied inplace.
     """
     
-    def __init__(self, pos_label=1, neg_label=None, copy=True):
+    def __init__(self, pos_label=1, neg_label=None, copy=True, parallel=False):
         super(LogLikelihoodRatio, self).__init__()
         self.pos_label = pos_label
         self.neg_label = neg_label
         self.copy = copy
+        self.parallel = parallel
     
     def fit(self, X, y=None):
         
@@ -159,11 +160,15 @@ class LogLikelihoodRatio(BaseEstimator, TransformerMixin):
         if self.copy:
             X = X.copy()
         
-        pool = multiprocessing.Pool(processes=None)
-        tX = pool.map(_log_likelihood_ratio, [(self, X[:, d], d) 
-                                              for d in range(D)])
-        for d, tx in enumerate(tX):
-            X[:, d] = tx
+        if self.parallel:
+            pool = multiprocessing.Pool(processes=None)
+            tX = pool.map(_log_likelihood_ratio, [(self, X[:, d], d) 
+                                                  for d in range(D)])
+            for d, tx in enumerate(tX):
+                X[:, d] = tx
+        else:
+            for d in range(D):
+                X[:, d] = _log_likelihood_ratio((self, X[:, d], d))
         
         return X
 
@@ -228,10 +233,11 @@ class Posterior(BaseEstimator, TransformerMixin):
         If False, .transform() is applied inplace.
     """
     
-    def __init__(self, pos_label=1, neg_label=None, copy=True):
+    def __init__(self, pos_label=1, neg_label=None, copy=True, parallel=False):
         super(Posterior, self).__init__()
         self.pos_label = pos_label
         self.neg_label = neg_label
+        self.parallel = parallel
         self.copy = copy
     
     def fit(self, X, y=None):
@@ -314,52 +320,17 @@ class Posterior(BaseEstimator, TransformerMixin):
         if self.copy:
             X = X.copy()
         
-        pool = multiprocessing.Pool(processes=None)
-        tX = pool.map(_posterior, [(self, X[:, d], d) for d in range(D)])
-        for d, tx in enumerate(tX):
-            X[:, d] = tx
+        if self.parallel:
+            pool = multiprocessing.Pool(processes=None)
+            tX = pool.map(_posterior, [(self, X[:, d], d) for d in range(D)])
+            for d, tx in enumerate(tX):
+                X[:, d] = tx
+        else:
+            for d in range(D):
+                X[:, d] = _posterior((self, X[:, d], d))
         
         return X
 
-def debug(posterior, X, y):
-    
-    from matplotlib import pyplot as plt
-    plt.ion()
-    
-    pos_indices = np.where(y[:, 0] == posterior.pos_label)
-    if posterior.neg_label is None:
-        neg_indices = np.where(y[:, 0] != posterior.pos_label)
-    else:
-        neg_indices = np.where(y[:, 0] == posterior.neg_label)
-    
-    
-    D = len(posterior.direction_)
-    for d in range(D):
-        
-        neg_samples = X[neg_indices, d].T
-        pos_samples = X[pos_indices, d].T
-        
-        m, M = posterior.support_[d]
-        neg_kde, pos_kde = posterior.kde_[d]
-        
-        plt.figure()
-        t = np.linspace(1.5*m-.5*M, 1.5*M-.5*m, num=100)
-        
-        plt.subplot(2,1,1)
-        plt.hist(pos_samples, bins=100, normed=True, color='g')
-        plt.hist(neg_samples, bins=100, normed=True, color='r')
-        plt.plot(t, pos_kde(t), 'g', linewidth=3)
-        plt.plot(t, neg_kde(t), 'r', linewidth=3)
-        
-        plt.legend(['Density for positive samples',
-                    'Density for negative samples'])
-        plt.xlim(t[0], t[-1])
-        
-        plt.subplot(2,1,2)
-        plt.plot(t, posterior._transform(t.copy(), d))
-        plt.title('Posterior')
-        plt.xlim(t[0], t[-1])
-        
 if __name__ == "__main__":
     import doctest
     doctest.testmod()
