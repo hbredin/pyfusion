@@ -25,6 +25,8 @@ Agreement between information retrieval (IR) systems
 import numpy as np
 import scipy.stats
 
+# === Ranking & pooling =======================================================
+
 def rank(a, higher_first=True):
     """
     Rank relevance scores
@@ -72,6 +74,7 @@ def top_ranked(r, pool_depth=100):
     """
     return np.any(r <= pool_depth, axis=1)
 
+# === Agreement measures ======================================================
 
 def kendall_rank_correlation(X, pool_depth=0, higher_first=True):
     """
@@ -274,6 +277,72 @@ def pearson_correlation(X, pool_depth=0, higher_first=True):
             
     return A
 
+
+# === System clustering =======================================================
+
+import networkx as nx
+import pyfusion.util.louvain
+def louvain(A):
+    """
+    Detection of communities of systems
+    
+    Parameters
+    ----------
+    A : array-like (num_systems, num_sytems)
+        System agreement matrix. Values must be in range [0, 1]
+        where 1 stands for identical systems.
+    
+    Returns
+    -------
+    communities : list of lists
+    
+    Reference
+    ---------
+        "Fast unfolding of communities in large networks"
+        Vincent D. Blondel, Jean-Loup Guillaume, Renaud Lambiotte 
+        and Etienne Lefebvre
+        J. Stat. Mech 10008, 1-12(2008).
+        
+        "Community-driven Hierarchical Fusion of Numerous Classifiers:
+         Application to Video Semantic Indexing"
+        Hervé Bredin
+        Proceedings of the 37th International Conference on Acoustics, Speech, 
+        and Signal Processing (ICASSP 2012)
+    
+    Notes
+    -----
+    If A is not symmetric (ie. A[i, j] != A[j, i]), it is automatically 
+    symmetrize by averaging the two values.
+    
+    """
+    
+    # values must be in range [0, 1]
+    if np.any(A < 0) or np.any(A > 1):
+        raise ValueError('Agreement value must be in range [0, 1].')
+        
+    # A should be a square matrix
+    d, D = A.shape
+    if d != D:
+        raise ValueError('Agreement matrix must be square.')
+    
+    # make A symmetric
+    A = .5*(A+A.T)
+    
+    # build system graph: 
+    # (one node per system, edges weighted by system agreement)
+    G = nx.Graph()
+    for i in range(D):
+        G.add_node(i)
+        for j in range(i+1, D):
+            G.add_edge(i, j, weight=A[i, j])
+    
+    # "Louvain" community detection
+    partition = pyfusion.util.louvain.best_partition(G)
+    
+    # list of lists (one list per community C)
+    return [sorted([i for i,c in partition.iteritems() if c == C])
+            for C in sorted(set(partition.values()))]
+    
 
 if __name__ == "__main__":
     import doctest
