@@ -119,17 +119,6 @@ class LogLikelihoodRatio(BaseEstimator, TransformerMixin):
         # gaussian kernel density estimation
         self.kde_ = []
         
-        # 'score direction' is a boolean that indicates whether higher score
-        # tends to indicate that the sample is a positive sample
-        # it is deduced automatically (and heuristically) from the average
-        # positive and negative scores
-        # this information is used for outlier scores (ie. scores for which both
-        # positive and negative likelihood are zero)
-        self.direction_ = []
-        
-        # 'score support' is the shortest interval where both positive and 
-        # negative samples have been seen...
-        self.support_ = []
         for d in range(D):
             
             # extract negative and positive samples
@@ -140,13 +129,6 @@ class LogLikelihoodRatio(BaseEstimator, TransformerMixin):
             neg_kde = scipy.stats.kde.gaussian_kde(neg_samples)
             pos_kde = scipy.stats.kde.gaussian_kde(pos_samples)
             self.kde_.append((neg_kde, pos_kde))
-            
-            # score direction
-            self.direction_.append(np.mean(pos_samples) > np.mean(neg_samples))
-            # score support
-            minmax = min(np.max(pos_samples), np.max(neg_samples))
-            maxmin = max(np.min(pos_samples), np.min(neg_samples))
-            self.support_.append((maxmin, minmax))
         
         return self
     
@@ -164,6 +146,7 @@ class LogLikelihoodRatio(BaseEstimator, TransformerMixin):
             pool = multiprocessing.Pool(processes=None)
             tX = pool.map(_log_likelihood_ratio, [(self, X[:, d], d) 
                                                   for d in range(D)])
+            pool.close()
             for d, tx in enumerate(tX):
                 X[:, d] = tx
         else:
@@ -265,17 +248,6 @@ class Posterior(BaseEstimator, TransformerMixin):
         # gaussian kernel density estimation
         self.kde_ = []
         
-        # 'score direction' is a boolean that indicates whether higher score
-        # tends to indicate that the sample is a positive sample
-        # it is deduced automatically (and heuristically) from the average
-        # positive and negative scores
-        # this information is used for outlier scores (ie. scores for which both
-        # positive and negative likelihood are zero)
-        self.direction_ = []
-        
-        # 'score support' is the shortest interval where both positive and 
-        # negative samples have been seen...
-        self.support_ = []
         for d in range(D):
             
             # extract negative and positive samples
@@ -286,13 +258,6 @@ class Posterior(BaseEstimator, TransformerMixin):
             neg_kde = scipy.stats.kde.gaussian_kde(neg_samples)
             pos_kde = scipy.stats.kde.gaussian_kde(pos_samples)
             self.kde_.append((neg_kde, pos_kde))
-            
-            # score direction
-            self.direction_.append(np.mean(pos_samples) > np.mean(neg_samples))
-            # score support
-            minmax = min(np.max(pos_samples), np.max(neg_samples))
-            maxmin = max(np.min(pos_samples), np.min(neg_samples))
-            self.support_.append((maxmin, minmax))
         
         return self
     
@@ -323,6 +288,7 @@ class Posterior(BaseEstimator, TransformerMixin):
         if self.parallel:
             pool = multiprocessing.Pool(processes=None)
             tX = pool.map(_posterior, [(self, X[:, d], d) for d in range(D)])
+            pool.close()
             for d, tx in enumerate(tX):
                 X[:, d] = tx
         else:
