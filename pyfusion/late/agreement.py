@@ -29,7 +29,7 @@ import scipy.stats
 
 def rank(a, higher_first=True):
     """
-    Rank relevance scores
+    Rank relevance scores (with ties)
     
     Parameters
     ----------
@@ -282,7 +282,7 @@ def pearson_correlation(X, pool_depth=0, higher_first=True):
 
 import networkx as nx
 import pyfusion.util.louvain
-def louvain(A):
+def louvain(A, level=None):
     """
     Detection of communities of systems
     
@@ -291,6 +291,7 @@ def louvain(A):
     A : array-like (num_systems, num_sytems)
         System agreement matrix. Values must be in range [0, 1]
         where 1 stands for identical systems.
+    level : int, optional
     
     Returns
     -------
@@ -337,8 +338,11 @@ def louvain(A):
             G.add_edge(i, j, weight=A[i, j])
     
     # "Louvain" community detection
-    partition = pyfusion.util.louvain.best_partition(G)
-    
+    if level is None:
+        partition = pyfusion.util.louvain.best_partition(G)
+    else:
+        dendrogram = pyfusion.util.louvain.generate_dendogram(G)
+        partition = pyfusion.util.louvain.partition_at_level(dendrogram, level)
     # list of lists (one list per community C)
     return [sorted([i for i,c in partition.iteritems() if c == C])
             for C in sorted(set(partition.values()))]
