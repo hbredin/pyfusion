@@ -20,9 +20,6 @@
 
 import numpy as np
 
-def to_line(x):
-    return x.reshape((-1, ))
-
 def average_precision(X, y, relevant_label=1):
     """
     Average precision (for fully annotated data)
@@ -36,6 +33,12 @@ def average_precision(X, y, relevant_label=1):
     relevant_label : int, optional
         Label of relevant samples. Defaults to 1.
         All other labels means irrelevant.
+    
+    Returns
+    -------
+    ap : array (num_systems, )
+        Average precision for each system
+    
     """
     
     X = np.atleast_2d(X)
@@ -55,7 +58,7 @@ def average_precision(X, y, relevant_label=1):
     relevant = np.empty((N, D), dtype=np.bool)
     for d in range(D):
         r = R[:, d]
-        relevant[:, d] = to_line(np.take(y, r, axis=0) == relevant_label)
+        relevant[:, d] = np.ravel(np.take(y, r, axis=0) == relevant_label)
     
     # relevant_at = np.cumsum(relevant, axis=0)
     # precision_at = relevant_at / np.arange(1, N+1)
@@ -77,6 +80,12 @@ def induced_average_precision(X, y, relevant_label=1, unknown_label=-1):
         Label of relevant samples. Defaults to 1.
     unknown_label : int, optional
         Label of unjudged samples. Defaults to -1.
+    
+    Returns
+    -------
+    ap : array (num_systems, )
+        Induced average precision for each system
+    
     """
     
     X = np.atleast_2d(X)
@@ -92,6 +101,46 @@ def induced_average_precision(X, y, relevant_label=1, unknown_label=-1):
                              relevant_label=relevant_label)
 
 
+def inferred_average_precision(X, y, unknown_label=-1, relevant_label=1):
+    """
+    Inferred average precision (for partially annotated data)
+    
+    Parameters
+    ----------
+    X : array-like (num_samples, num_systems)
+        Sample relevance scores for each system
+    y : array-like (num_samples, )
+        Relevance judgments
+    relevant_label : int, optional
+        Label of relevant samples. Defaults to 1.
+    unknown_label : int, optional
+        Label of unjudged samples. Defaults to -1.
+    
+    Returns
+    -------
+    ap : array (num_systems, )
+        Inferred average precision for each system
+    
+    Reference
+    ---------
+        "Inferred AP : Estimating Average Precision with Incomplete Judgments"
+        Emine Yilmaz and  Javed A. Aslam
+    
+    """
+    
+    X = np.atleast_2d(X)
+    y = np.atleast_2d(y)
+    N, D = X.shape
+    n, d = y.shape
+    if N != n or d != 1:
+        raise ValueError('X-y shape mismatch (%d, %d) vs. (%d, %d)' % 
+                         (N, D, n, d))
+    
+    p = 1. * (y != unknown_label)
+    return extended_inferred_average_precision(X, y, p,
+                                               unknown_label=unknown_label,
+                                               relevant_label=relevant_label)
+    
 def extended_inferred_average_precision(X, y, p, unknown_label=-1,
                                                  relevant_label=1):
     """
@@ -112,6 +161,11 @@ def extended_inferred_average_precision(X, y, p, unknown_label=-1,
     unknown_label : int, optional
         Label of unjudged samples. Defaults to -1.
     
+    Returns
+    -------
+    ap : array (num_systems, )
+        Extended inferred average precision for each system
+    
     Reference
     ---------
         "A Simple and Efficient Sampling Method for Estimating AP and NDCG"
@@ -121,6 +175,8 @@ def extended_inferred_average_precision(X, y, p, unknown_label=-1,
         (www.ccs.neu.edu/home/ekanou/research/papers/mypapers/sigir08b.pdf)
     
     """
+    
+    eps = 1e-10
     
     X = np.atleast_2d(X)
     y = np.atleast_2d(y)
@@ -138,7 +194,7 @@ def extended_inferred_average_precision(X, y, p, unknown_label=-1,
     # rank samples by relevance scores
     R = np.argsort(-X, axis=0)
     
-    pools = sorted(set(p[:,0]))
+    pools = [pool for pool in sorted(set(p[:,0])) if pool > 0]
     N_pools = len(pools)
     
     # pooled[p,r,d] == True means rth sample (using ranking from dth system)
@@ -165,7 +221,7 @@ def extended_inferred_average_precision(X, y, p, unknown_label=-1,
         y_ = np.take(y, r, axis=0)
         Relevant[:, d] = y_[:, 0] == relevant_label
         for i, pool in enumerate(pools):
-            in_pool = to_line(p_ == pool)
+            in_pool = np.ravel(p_ == pool)
             pooled[i,:,d] = in_pool
             relevant[i,:,d] = in_pool * Relevant[:, d]
             judged[i,:,d] = in_pool * (y_[:,0]!=unknown_label)
@@ -192,14 +248,14 @@ def extended_inferred_average_precision(X, y, p, unknown_label=-1,
     #    * Expected precision above rank /k/ within pool /p/
     #      ==> relevant_at[p,k,:] / judged_at[p,k,:]
     at = np.arange(1, N+1).reshape((-1, 1))
-    precision_above = np.sum(1.*pooled_at*(relevant_at+1e-8)/(judged_at+2e-8), axis=0) / at
+    precision_above = np.sum(1.*pooled_at*(relevant_at+eps)/(judged_at+2*eps), axis=0) / at
     
     # Precision @ N
     precision_at = 1./at + (at-1.)/at * precision_above
     
     # Expected number of relevant samples
-    N_rel = np.sum(1. * pooled_at[:,-1, 0] * relevant_at[:,-1, 0] / 
-                                             judged_at[:, -1, 0])
+    N_rel = np.sum(1. * pooled_at[:,-1, 0] * (relevant_at[:,-1, 0]+eps) / 
+                                             (judged_at[:, -1, 0]+2*eps))
     
     # Average precision @ relevant samples
     return np.sum(Relevant * precision_at, axis=0) / N_rel
