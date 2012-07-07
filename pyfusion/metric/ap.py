@@ -242,20 +242,26 @@ def extended_inferred_average_precision(X, y, p, unknown_label=-1,
     #                    (using ranking from dth system)
     judged_at = np.cumsum(judged, axis=1)
     
-    # Expected precision above rank /k/:
+    # Expected precision above rank /k+1/:
     #    * Probability of choosing pool /p/ at rank /k/
     #      ==> pooled_at[p,k,:] / k
-    #    * Expected precision above rank /k/ within pool /p/
+    #    * Expected precision above rank /k+1/ within pool /p/
     #      ==> relevant_at[p,k,:] / judged_at[p,k,:]
+    # precision_above[k, d] is the estimated precision above rank /k+1/ (!!!) 
+    #                       (using ranking from dth system)
     at = np.arange(1, N+1).reshape((-1, 1))
-    precision_above = np.sum(1.*pooled_at*(relevant_at+eps)/(judged_at+2*eps), axis=0) / at
+    precision_above = np.sum(pooled_at*(relevant_at+eps)/(judged_at+2*eps), 
+                             axis=0) / at
     
-    # Precision @ N
+    # Expected precision above rank /k/
+    precision_above = np.concatenate([np.zeros((1, D)), precision_above[:-1,:]])
+    
+    # Expected precision @ N (assuming N is relevant)
     precision_at = 1./at + (at-1.)/at * precision_above
     
     # Expected number of relevant samples
-    N_rel = np.sum(1. * pooled_at[:,-1, 0] * (relevant_at[:,-1, 0]+eps) / 
-                                             (judged_at[:, -1, 0]+2*eps))
+    N_rel = np.sum(1. * pooled_at[:,-1,0] * (relevant_at[:,-1,0]+eps) / 
+                                             (judged_at[:,-1,0]+2*eps))
     
     # Average precision @ relevant samples
     return np.sum(Relevant * precision_at, axis=0) / N_rel
