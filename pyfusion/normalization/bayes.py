@@ -19,7 +19,7 @@
 #     along with PyFusion.  If not, see <http://www.gnu.org/licenses/>.
 
 """
-Posterior probability estimation
+Bayesian probability estimation
 """
 
 import numpy as np
@@ -52,28 +52,30 @@ def _log_likelihood_ratio((llh_ratio, x, d)):
     
     # samples where both likelihoods are strictly positive
     known = np.where((pos_llh > 0) * (neg_llh > 0))
-    x[known] = np.log(neg_llh[known]) - np.log(pos_llh[known])
+    x[known] = np.log(pos_llh[known]) - np.log(neg_llh[known])
     
     # samples where both likelihoods are null
-    # likelihood ratio == 1 ==> 
-    unknown = np.where((neg_llh == 0) * (pos_llh == 0))
+    # likelihood ratio == 1 ==> log likelihood ratio == 0
+    unknown = np.where((pos_llh == 0) * (neg_llh == 0))
     x[unknown] = 0.
     
     # samples where positive likelihood is strictly positive
     # and negative likelihood is null ==> infinity likelihood ratio
     good = np.where((neg_llh == 0) * (pos_llh > 0))
-    x[good] = -np.inf
+    x[good] = np.inf
     
     # samples where negative likelihood is strictly positive
-    # and positive likelihood is null ==> null likelihood ratio
+    # and positive likelihood is null ==> zero likelihood ratio
     bad = np.where((neg_llh > 0) * (pos_llh == 0))
-    x[bad] = np.inf
+    x[bad] = -np.inf
     
     return x
 
 class LogLikelihoodRatio(BaseEstimator, TransformerMixin):
     """
-    Log-likelihood ratio estimator
+    Log-likelihood ratio estimator log f(x | H) - log f(x | not H)
+    
+    ... based on non-parametric Gaussian-kernel density estimator
     
     Parameters
     ----------
@@ -83,15 +85,12 @@ class LogLikelihoodRatio(BaseEstimator, TransformerMixin):
         Label of negative samples.
         If it is not provided, all samples that are not positive samples
         are considered as negative samples (this is the default behavior).
-    copy : boolean, optional
-        If False, .transform() is applied inplace.
     """
     
-    def __init__(self, pos_label=1, neg_label=None, copy=True, parallel=False):
+    def __init__(self, pos_label=1, neg_label=None, parallel=False):
         super(LogLikelihoodRatio, self).__init__()
         self.pos_label = pos_label
         self.neg_label = neg_label
-        self.copy = copy
         self.parallel = parallel
     
     def fit(self, X, y=None):
@@ -139,8 +138,7 @@ class LogLikelihoodRatio(BaseEstimator, TransformerMixin):
         if D != len(self.kde_):
             raise ValueError('X shape mismatch')
         
-        if self.copy:
-            X = X.copy()
+        X = X.copy()
         
         if self.parallel:
             pool = multiprocessing.Pool(processes=None)
@@ -155,54 +153,12 @@ class LogLikelihoodRatio(BaseEstimator, TransformerMixin):
         
         return X
 
-def _posterior((posterior, x, d)):
-    """
-    Helper function for multi-threaded computation of posterior probabilities
-    
-    Function
-    
-    Parameters
-    ----------
-    posterior : Posterior
-    x : array (num_samples, )
-    d : int
-    
-    Returns
-    -------
-    x : 
-    
-    """
-    
-    # compute positive & negative likelihoods
-    neg_kde, pos_kde = posterior.kde_[d]
-    pos_llh = pos_kde(x)
-    neg_llh = neg_kde(x)
-    
-    # samples where both likelihoods are strictly positive
-    known = np.where((pos_llh > 0) * (neg_llh > 0))
-    neg_prior, pos_prior = posterior.prior_
-    x[known] = 1./(1 + neg_llh[known]/pos_llh[known]*neg_prior/pos_prior)
-    
-    # samples where both likelihoods are null
-    # likelihood ratio == 1 ==> 
-    unknown = np.where((neg_llh == 0) * (pos_llh == 0))
-    x[unknown] = pos_prior
-    
-    # samples where positive likelihood is strictly positive
-    # and negative likelihood is null ==> infinity likelihood ratio
-    good = np.where((neg_llh == 0) * (pos_llh > 0))
-    x[good] = 1.
-    
-    # samples where negative likelihood is strictly positive
-    # and positive likelihood is null ==> null likelihood ratio
-    bad = np.where((neg_llh > 0) * (pos_llh == 0))
-    x[bad] = 0.
-    
-    return x
 
-class Posterior(BaseEstimator, TransformerMixin):
+class Posterior(LogLikelihoodRatio):
     """
-    Likelihood ratio estimator
+    Posterior probabiliy estimator
+    
+    ... based on non-parametric Gaussian-kernel density estimator
     
     Parameters
     ----------
@@ -212,54 +168,12 @@ class Posterior(BaseEstimator, TransformerMixin):
         Label of negative samples.
         If it is not provided, all samples that are not positive samples
         are considered as negative samples (this is the default behavior).
-    copy : boolean, optional
-        If False, .transform() is applied inplace.
     """
     
-    def __init__(self, pos_label=1, neg_label=None, copy=True, parallel=False):
-        super(Posterior, self).__init__()
-        self.pos_label = pos_label
-        self.neg_label = neg_label
-        self.parallel = parallel
-        self.copy = copy
-    
-    def fit(self, X, y=None):
-        
-        # make X.shape == (n, d) and y.shape == (n, 1)
-        X = np.atleast_2d(X)
-        y = np.atleast_2d(y)
-        N, D = X.shape
-        n, d = y.shape
-        if N != n or d != 1:
-            raise ValueError('X-y shape mismatch (%d, %d) vs. (%d, %d)' % 
-                             (N, D, n, d))
-        
-        # prior probability
-        pos_indices = np.where(y[:, 0] == self.pos_label)
-        if self.neg_label is None:
-            neg_indices = np.where(y[:, 0] != self.pos_label)
-        else:
-            neg_indices = np.where(y[:, 0] == self.neg_label)
-        Np = len(pos_indices[0])
-        Nn = len(neg_indices[0])
-        N = Np + Nn
-        self.prior_ = (1.*Nn/N, 1.*Np/N)
-        
-        # gaussian kernel density estimation
-        self.kde_ = []
-        
-        for d in range(D):
-            
-            # extract negative and positive samples
-            neg_samples = X[neg_indices, d]
-            pos_samples = X[pos_indices, d]
-            
-            # estimate probability density function
-            neg_kde = scipy.stats.kde.gaussian_kde(neg_samples)
-            pos_kde = scipy.stats.kde.gaussian_kde(pos_samples)
-            self.kde_.append((neg_kde, pos_kde))
-        
-        return self
+    def __init__(self, pos_label=1, neg_label=None, parallel=False):
+        super(Posterior, self).__init__(pos_label=pos_label,
+                                        neg_label=neg_label, 
+                                        parallel=parallel)
     
     def transform(self, X):
         """
@@ -277,25 +191,9 @@ class Posterior(BaseEstimator, TransformerMixin):
         
         """
         
-        X = np.atleast_2d(X)
-        nX, D = X.shape
-        if D != len(self.kde_):
-            raise ValueError('X shape mismatch')
-        
-        if self.copy:
-            X = X.copy()
-        
-        if self.parallel:
-            pool = multiprocessing.Pool(processes=None)
-            tX = pool.map(_posterior, [(self, X[:, d], d) for d in range(D)])
-            pool.close()
-            for d, tx in enumerate(tX):
-                X[:, d] = tx
-        else:
-            for d in range(D):
-                X[:, d] = _posterior((self, X[:, d], d))
-        
-        return X
+        lr = np.exp(-super(Posterior, self).transform(X))
+        neg_prior, pos_prior = self.prior_
+        return 1./(1 + lr*neg_prior/pos_prior)
 
 if __name__ == "__main__":
     import doctest
