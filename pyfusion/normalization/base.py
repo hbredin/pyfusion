@@ -44,14 +44,17 @@ class Sigmoid(ZNorm):
     """
     Sigmoid normalization
     
+    1/2 (1 + tanh( sigma * (x-mean)/std ))
+    
     Parameters
     ----------
     copy : boolean, optional
         If False, .transform() is applied inplace.
     """
-    def __init__(self, copy=True):
+    def __init__(self, sigma=0.01, copy=True):
         super(Sigmoid, self).__init__()
         self.copy = copy
+        self.sigma = sigma
         
     def transform(self, X):
-        return .5*(1+np.tanh(.01*super(Sigmoid, self).transform(X)))
+        return .5*(1+np.tanh(sigma*super(Sigmoid, self).transform(X)))
