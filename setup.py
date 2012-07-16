@@ -12,6 +12,7 @@ setup(
     url='http://packages.python.org/PyFusion',
     # packages= find_packages(),
     packages=['pyfusion', 
+              'pyfusion.metric',
               'pyfusion.normalization',
               'pyfusion.late'],
     install_requires=['numpy >=1.6.1', 
