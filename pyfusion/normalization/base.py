@@ -57,4 +57,4 @@ class Sigmoid(ZNorm):
         self.sigma = sigma
         
     def transform(self, X):
-        return .5*(1+np.tanh(sigma*super(Sigmoid, self).transform(X)))
+        return .5*(1+np.tanh(self.sigma*super(Sigmoid, self).transform(X)))
